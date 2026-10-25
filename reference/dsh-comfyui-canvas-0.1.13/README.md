@@ -1,0 +1,238 @@
+# dsh-comfyui-canvas
+
+> [中文](README.zh.md) · English
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.1.13-brightgreen.svg)](https://github.com/wbin0001/dsh-comfyui-canvas/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/wbin0001/dsh-comfyui-canvas.svg?style=social)](https://github.com/wbin0001/dsh-comfyui-canvas)
+[![DSH](https://img.shields.io/badge/DSH-v0.1.x-blueviolet.svg)](https://github.com/DeepSeek-Harness/DSH)
+[![ComfyUI](https://img.shields.io/badge/ComfyUI-0.34+-orange.svg)](https://github.com/comfyanonymous/ComfyUI)
+[![Canvas](https://img.shields.io/badge/canvas-split--screen-teal.svg)](docs/architecture.html)
+
+**Keywords**: ComfyUI · Stable Diffusion · 文生图 text-to-image · 图生图 img2img · AI 绘画 AI art · workflow 工作流 · music 音乐 · video 视频 · 3D · DeepSeek Harness · DSH
+
+> **✅ DSH version compatibility (since v0.1.4)**: the split-screen layout is **fully self-contained** in the plugin — it uses only official DSH slots (`conversation.session.header.utilities`) and DOM `data-*` anchors, with **zero core modifications**. Works on any official DSH **v0.1.x** (including v0.1.2+ with the breaking client refresh) without patches. The earlier split-rail implementation depended on private core patches; v0.1.4 removes that dependency entirely.
+
+![dsh-comfyui-canvas demo — agent drives a live ComfyUI workflow and fetches the output grid back into the chat](docs/screenshots/03-output-grid.png)
+
+**From chat to canvas to artwork — drive ComfyUI as a visual workflow IDE inside DSH.** Embed **ComfyUI** (local or cloud) as a split-screen canvas in [DeepSeek Harness](https://github.com/DeepSeek-Harness/DSH) Web: the agent sparks ideas, writes prompts and scripts right in the chat, applies them live to the canvas in front of you, and produces images, music, video, and 3D. From idea to finished output without ever leaving the conversation or switching front-ends:
+
+- **Canvas ops** — compose and arrange pipelines, read/write workflows, edit nodes, wire links, run, tune parameters, and debug errors, all live and WYSIWYG on the exact canvas you are looking at
+- **Production tasks** — batch parameter sweeps (`batch_run`) and automatic output-image retrieval back into the chat (`get_outputs`), powering multi-modal creative and batch generation across images, music, video, and 3D
+- **Environment upkeep** — one-click launch of ComfyUI and one-click upgrade of the core plus every custom node (`upgrade`), keeping the stack healthy without interruption
+
+This package is the DSH-side plugin, and it ships the ComfyUI-side bridge node too. For headless/scale workloads it can be paired with the official ComfyUI MCP server — see [Canvas + MCP](#canvas--mcp--two-driving-modes-of-the-same-comfyui).
+
+> **Where this plugin fits**: use it while **building / tuning a workflow on the live canvas** (the "IDE" role). For **unattended / batch / production runs**, hand the exported workflow to **Comfy CLI** (`comfy-cli run_workflow`) — it runs headlessly without a browser, which this canvas plugin deliberately does not do (the agent drives the canvas you are looking at; a closed browser means no runner). Export a workflow once with `comfyui_export_api`, then script it with the CLI at scale.
+
+## What you get
+
+| Surface | Description |
+|---|---|
+| **ComfyUI canvas split** | Clicking the **ComfyUI** button in the session header drops you straight into **canvas-on-the-left + chat-rail-on-the-right** split mode — the canvas embeds the ComfyUI frontend (local or cloud) alongside the official conversation rail, so you can chat with the agent while watching it drive the canvas. The iframe stays alive (no reload); click the button again to exit split. |
+| **Visual canvas copilot** | The agent operates **the canvas you are looking at** — nodes appear, links wire, widgets change and runs trigger live on screen, so you watch every step instead of trusting an opaque JSON edit. Output images come back into the chat via `comfyui_get_outputs`. |
+| **Canvas ops tools** | `comfyui_read_workflow`, `add_node`, `connect`, `set_param`, `remove_node`, `inject_text`, `load_workflow`, `run`, `debug`, `clear`, `group` — build and fix workflows on the live canvas; `group` organizes complex workflows into named groups (prompt / sampler / output areas) with auto-fitted boxes, title headroom and membership persistence. **Workflow lifecycle** (v0.1.12): `comfyui_new_canvas` starts a brand-new blank workflow through the frontend's own "New Blank Workflow" action (no clearing, no click), `comfyui_rename_workflow` names/renames it, `comfyui_save_workflow` persists it — all via the frontend stores, no dialogs. **Layout** (v0.1.12): `comfyui_move_node` (absolute/offset) and `comfyui_align_nodes` (align / distribute / grid) tidy the canvas, and group boxes re-fit automatically when a member moves. |
+| **Production tools** | `comfyui_batch_run` sweeps a parameter matrix (seeds/prompts/strengths) in one go — either explicit `runs` or a declarative `matrix` (`zip` parallel slots / `product` cartesian expansion); `comfyui_get_outputs` pulls the resulting files back into the chat — images, videos, gifs, and audio — with optional `outputStem` auto-incrementing names (`stem.01.png`, never overwrites); `comfyui_attach_file` uploads any local file (image/audio/video/3D/text) into ComfyUI's input/ for the matching Load node; `comfyui_export_api` exports the live canvas as API-format workflow JSON for comfy-cli headless batch runs. |
+| **One-click bridge install** | `comfyui_setup_bridge` detects / installs / updates the ComfyUI-side bridge node into `custom_nodes/` (idempotent, verifies the files, tells you when to restart) — no more manual copy step; `comfyui_config` reports `bridgeInstalled` / `bridgeVersion` / `bridgeUpToDate` at a glance. |
+| **Projects & traceability** | Downloads default to the project directory (Settings → Project directory, default `<workspace>/projects`); every downloaded run appends `runs.json` (promptId / overrides / timestamp / files) so any output can be traced back to its parameters. Failed runs return a structured `executionError` (node id / node type / exception / message) instead of a raw JSON wall. |
+| **Skills (SOPs)** | Built-in skills teach the agent the right order of operations: `comfyui-canvas-ops` (read → confirm → edit → run → fetch → self-check), `comfyui-admin-ops` (configure/launch/upgrade/node management), `comfyui-video-audio-ops` (video + voiceover/audio track), and `comfyui-dev-ops` (develop/debug custom nodes). Install the plugin and the skills ship with it — no extra setup. |
+| **Upkeep tool** | `comfyui_upgrade` one-click updates the ComfyUI core and every git-backed custom node (concurrent, dirty-safe); `comfyui_config` reports the active connection, canvas focus, project directory, and a bridge-auth handshake check (`bridgeAuthEffective`). |
+| **Node dev tools** | `comfyui_read_source` / `comfyui_edit_source` / `comfyui_reload` — read and edit custom-node source under custom_nodes/ and restart ComfyUI from the conversation, then verify on the canvas. |
+| **Canvas focus mode** | The agent can tell (via `comfyui_config`) whether canvas split mode is active for the current session, and focus on canvas work only then. Session-isolated. |
+| **Settings page** | ComfyUI base URL / port / network mode / bridge token / launch command / project directory / rail width. Changes apply live. Shows the plugin version and supports check / one-click update (installs the latest npm release; a DSH restart is required). Customized nav icon with ComfyUI logo. |
+| **Split layout** | The **ComfyUI** button in the session header opens canvas-on-the-left + official chat rail on the right (state is session-isolated). Only data-* anchors and CSS variables are used — no DSH core class names, so the layout survives upstream styling changes. |
+
+## Install
+
+### 1. Install the DSH plugin
+
+```bash
+dsh plugin add dsh-comfyui-canvas
+```
+
+Or from a GitHub checkout:
+
+```bash
+dsh plugin add github:wbin0001/dsh-comfyui-canvas
+```
+
+Or from a local checkout:
+
+```text
+# in your DSH profile
+pnpm add <path-to-this-package>
+```
+
+The bundled `cordis.patch.yml` mounts the plugin automatically (`dsh.bundle.patch`).
+
+### 2. Install the ComfyUI bridge node (one-click)
+
+The agent tools talk to the ComfyUI page through a bridge (`/dsh-bridge/*`). After installing the plugin, ask the agent to **"install the ComfyUI bridge node"** (or run `comfyui_setup_bridge` yourself): it detects whether the bridge is present in `custom_nodes/`, copies the version embedded in this package (idempotent — a same-or-newer installed copy is kept), verifies the files, and tells you when to restart ComfyUI.
+
+```text
+Agent: comfyui_setup_bridge → { installed, version, upToDate, restartNote }
+```
+
+Requires the **ComfyUI install directory** in **Settings → ComfyUI Canvas** (or the `COMFYUI_DIR` env var). If it is not set, `comfyui_config` reports `bridgeInstalled: false` — set it once and re-run.
+
+Manual copy is still supported (e.g. air-gapped machines) — the bridge ships **inside this package** at `comfyui-bridge/ComfyUI-DSH-Canvas`:
+
+**Windows (PowerShell / cmd):**
+```text
+Copy-Item -Recurse (npm root -g)\dsh-comfyui-canvas\comfyui-bridge\ComfyUI-DSH-Canvas <ComfyUI>\custom_nodes\ComfyUI-DSH-Canvas
+```
+
+**macOS / Linux (bash):**
+```text
+cp -r $(npm root -g)/dsh-comfyui-canvas/comfyui-bridge/ComfyUI-DSH-Canvas <ComfyUI>/custom_nodes/ComfyUI-DSH-Canvas
+```
+
+Then restart ComfyUI and load the canvas page once (the injected `bridge.js` reports the graph and listens for commands).
+
+### 3. Cloud ComfyUI (deploy the bridge on the machine that RUNS ComfyUI)
+
+`comfyui_setup_bridge` manages a **local** install (`comfyuiDir` is a local path). For a cloud / remote ComfyUI, install the bridge on the **cloud machine** — pick one:
+
+**A. SSH / console access (self-hosted cloud GPU box)** — on the cloud machine:
+```text
+# option 1: pull the npm package and copy the bridge out of it
+npm pack dsh-comfyui-canvas && tar -xzf dsh-comfyui-canvas-*.tgz && cp -r package/comfyui-bridge/ComfyUI-DSH-Canvas <ComfyUI>/custom_nodes/
+
+# option 2: sparse-checkout just the bridge from the GitHub repo
+cd <ComfyUI>/custom_nodes
+git clone --depth 1 --filter=blob:none --sparse https://github.com/wbin0001/dsh-comfyui-canvas.git
+cd dsh-comfyui-canvas && git sparse-checkout set comfyui-bridge/ComfyUI-DSH-Canvas
+mv comfyui-bridge/ComfyUI-DSH-Canvas ../ComfyUI-DSH-Canvas && cd .. && rm -rf dsh-comfyui-canvas
+```
+Then restart the cloud ComfyUI, point the plugin's `baseUrl` at the cloud address, and (recommended) set a matching `DSH_BRIDGE_TOKEN` on both sides (see Security).
+
+**B. Hosted SaaS (API only, no shell)** — if the provider does not allow installing custom nodes, the bridge (and the visual canvas) is unavailable; use the pure API/MCP path instead (`comfyui_export_api` → comfy-cli / an MCP server) for headless runs. `comfyui_config` will report `bridgeInstalled: false` in this case.
+
+### 4. Configure
+
+Open **Settings → ComfyUI Canvas** and set the ComfyUI base URL (default `http://127.0.0.1:8188`), port, network mode, optional bridge token, launch command, and the right-side rail width.
+
+The **launch command** differs by platform:
+
+| Platform | Example |
+|---|---|
+| Windows | `ComfyUI启动器.bat` (the launcher script; or `python main.py`) |
+| macOS | `python main.py` or `./start.sh` |
+| Linux | `python main.py` or `./start.sh` |
+
+## Security
+
+The bridge (`/dsh-bridge/*`) is the only network surface this plugin adds to ComfyUI. Read this before exposing ComfyUI beyond loopback.
+
+- **Trust model.** By default the bridge is unauthenticated, matching ComfyUI's own `/prompt` trust model — anyone who can reach the ComfyUI port can read the canvas, report state, and dispatch commands (`load_workflow`/`run` consume GPU). Commands are whitelisted on the frontend, so no arbitrary code execution is possible, but the surface is real.
+- **Bind to loopback.** Keep ComfyUI on `127.0.0.1` unless you explicitly need LAN/cloud access. `networkMode` is informational; the actual bind is whatever ComfyUI was launched with (`--listen`).
+- **Optional shared token.** Set a token in **Settings → ComfyUI Canvas → Bridge Token** AND launch ComfyUI with the same value in its own environment (`DSH_BRIDGE_TOKEN=...`). When the token is set, every agent-initiated request — reading the canvas, dispatching a command, polling its result — must present `Authorization: Bearer <token>`; the host side sends it automatically and the bridge rejects requests without it. The frontend's own status reporting (`/report`, result callbacks) stays open, since the injected page cannot hold the token; those endpoints only mutate the in-memory snapshot and never dispatch execution. Leave it empty on both sides for the default open behavior.
+- **Multiple tabs are safe.** Commands are targeted at the last-reporting frontend (`clientId`), so several open ComfyUI tabs do not each execute a command.
+
+## Platform support
+
+Works on **Windows**, **macOS** and **Linux**. The agent tools talk to ComfyUI over plain HTTP (`/dsh-bridge/*`), so nothing platform-specific lives in the plugin itself — only the copy command and the ComfyUI launch command differ, and both are documented above.
+
+## Usage
+
+1. Open a conversation and click the **ComfyUI** button in the session header — the canvas appears on the left with the Chat rail (messages + input) on the right, so you can instruct the agent while watching it work the canvas. Click the button again to exit split mode.
+2. Ask the agent to do canvas work: "read the current workflow", "set KSampler seed to 42", "check the canvas for errors", "run it".
+3. The agent reads `comfyui_config` first, so it knows it's on the canvas and stays focused on canvas operations.
+
+### Conversation → canvas
+
+Content the agent generates in the chat — images and text — can become ComfyUI workflow node inputs directly, closing the loop from conversation idea to canvas output:
+
+- `comfyui_attach_image`: upload a local image into ComfyUI's `input/` and optionally point a LoadImage node at it. Uses ComfyUI's native `/upload/image` (not the bridge) — the host reads and uploads the file from the agent's own machine, which matters when the DSH machine and the ComfyUI machine differ (cloud deployments).
+- `comfyui_inject_text`: write text to a node's widget; or create a new source node, set its value, and connect it to a target input — "conversation text as a wirable source". A one-step wrapper over `add_node + set_param + connect`; `set_param` alone suffices when only an existing widget changes, and `inject_text` is for "create a new source and wire it".
+- `comfyui_export_api`: export the live canvas as API-format workflow JSON (the format `/prompt` and comfy-cli `run_workflow` consume), bridging canvas → MCP headless runs.
+
+> Architecture boundary: file transfer (image → `input/`) goes through the host + native API; canvas node ops go through bridge commands; reading results goes through native `/history` + `/view` — three layers that never mix.
+
+### Canvas + MCP — two driving modes of the same ComfyUI
+
+The plugin is the **canvas driver**: it sees and edits the live canvas the user is looking at (add nodes, wire links, tweak widgets, run, fetch the run's output images via `comfyui_get_outputs`, sweep parameters via `comfyui_batch_run`). It never needs a saved workflow file.
+
+For **pipeline-style / headless workloads**, ComfyUI's official **Comfy CLI** (`comfy-cli`, a standalone Python CLI that can also expose an **MCP server**) is the complementary executor. The two are not alternatives — they are two driving modes of the **same** ComfyUI instance, covering the full workflow lifecycle:
+
+| Workflow stage | Driving mode | Capability |
+|---|---|---|
+| Build / tune | **Canvas plugin** (bridge) | Live canvas edits, run, `debug` validation, `get_outputs` fetch |
+| Freeze / export | **Canvas plugin** | `comfyui_export_api` — export the tuned graph as API-format JSON |
+| Batch / headless at scale | **MCP / comfy-cli** | Run the same graph headlessly: batch queues, official templates, model management, hosted models |
+| Results back in the chat | **Canvas plugin** | `comfyui_get_outputs` pulls the run's outputs into the conversation |
+
+**The loop**: tune on the canvas → `export_api` → hand the API workflow to MCP / comfy-cli for unattended scale → bring results back via `get_outputs`. Nothing leaves DSH; the canvas and headless modes complement rather than replace each other.
+
+Install the Comfy CLI with:
+```bash
+pip install comfy-cli   # standalone CLI, not a DSH plugin — see https://github.com/Comfy-Org/comfy-cli
+```
+
+### Workflow operating modes (how the agent works the canvas)
+
+The built-in `comfyui-canvas-ops` skill instructs the agent to pick the right operating mode per scenario:
+
+| Scenario | Mode |
+|---|---|
+| **Edit an existing workflow** | Incremental edits on the current canvas (`set_param` / `connect` / `add_node` / `remove_node` / `inject_text`) — never a whole-graph `load_workflow` that would wipe the unsaved state |
+| **Start a new workflow** | `comfyui_new_canvas` (a brand-new blank canvas via the frontend's own New action) or `comfyui_clear` (blank the current canvas, `confirm`-guarded), then build up |
+| **Build a complex workflow** | `comfyui_group` named groups (prompt / sampler / output areas) + `comfyui_align_nodes` / `comfyui_move_node` tidy layout |
+| **Quick validation / batch / unattended** | **API/MCP path** — submit an API-format workflow directly (or via an MCP server), no need to visualize on the canvas |
+
+The agent decides the path up front: visual canvas mode when the user is watching / tuning, API/MCP mode for fast validation, batch sweeps and unattended runs.
+
+### Workflow groups (organize complex pipelines)
+
+`comfyui_group` organizes a complex canvas into **named groups** that survive save/load:
+
+| Action | Behavior |
+|---|---|
+| `add` | Create a named group around the given nodes; the box auto-fits the nodes (an explicit `bounding` is honored when given) |
+| `add_nodes` / `remove_nodes` | Add / remove member nodes; the box re-fits automatically |
+| `rename` / `list` | Rename a group / list groups with their members |
+
+**Membership persistence**: saving the workflow serializes each group's member ids (`nodes`) next to `title` / `bounding` / `color`, and loading re-attaches them — a saved workflow reopens with the same boxes and their memberships intact.
+
+## Requirements
+
+- DeepSeek Harness Web (DSH), Node `^22.19.0 || >=24`
+- ComfyUI running (local by default at `127.0.0.1:8188`; for a cloud instance, deploy the bridge node on the machine that runs ComfyUI and make sure DSH can reach it) with the bridge node installed (`comfyui_setup_bridge` does this in one step)
+- A browser tab with the ComfyUI page open (the canvas tab loads it automatically)
+
+## Development
+
+```bash
+npm run check   # node --check both lib files
+```
+
+The plugin lives in the DSH profile under `node_modules/dsh-comfyui-canvas`; edit `lib/index.js` (host tools) and `lib/client.js` (web client), then restart DSH.
+
+## Repository layout
+
+```
+dsh-comfyui-canvas/
+├── cordis.patch.yml          # DSH bundle layer (auto-mount)
+├── comfyui-bridge/           # ComfyUI-side bridge node (self-contained)
+│   └── ComfyUI-DSH-Canvas/
+│       ├── __init__.py       # /dsh-bridge/* HTTP routes on the ComfyUI server
+│       └── entry/bridge.js   # injected frontend: reports graph + runs commands
+├── lib/
+│   ├── index.js              # DSH host: 26 canvas tools + 4 built-in skills
+│   └── client.js             # DSH web: split canvas (left) + chat rail (right) / settings
+├── LICENSE
+├── README.md
+└── package.json
+```
+
+The **bridge** is the only ComfyUI-side dependency. It exposes `/dsh-bridge/workflow|report|command|result` and is injected into the ComfyUI page via `app.registerExtension`; without it the agent tools cannot reach the canvas.
+
+## Known issues
+
+- **Non-official desktop wrappers** are not guaranteed compatible — they bundle an upstream version that may be ahead of or behind this plugin's baseline; rely on official DSH.
+- `comfyui_reload` currently supports **Windows only** (uses `netstat`/`taskkill`); on macOS/Linux it fails loud instead of pretending, restart ComfyUI manually there.
+- The former "node previews missing after a run" is fixed in v0.1.1: removed the iframe's `referrerpolicy="no-referrer"` to match the native tab environment, and `bridge.js` now listens to ComfyUI's `executed` event to force a canvas redraw.
+
+## License
+
+MIT

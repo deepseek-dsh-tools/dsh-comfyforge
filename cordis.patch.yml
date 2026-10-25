@@ -1,0 +1,11 @@
+# dsh-comfyforge bundle patch: inserts the plugin into a profile's layer stack.
+#
+# V0：只有一条 entry。设置页 / 面板 / 技能包等 UI 贡献由 client 半自动编入，
+# 这里不需要声明（见 package.json 的 dsh.client）。
+#
+# 装法：
+#   dsh plugin --profile desktop add link:D:/用户/代码/dsh-comfyforge
+# 装完【必须重启 DSH】—— profile 插件改动不接受热重载。
+- insert:
+    - id: comfyforge
+      name: 'dsh-comfyforge'
